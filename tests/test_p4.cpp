@@ -45,7 +45,7 @@ int main(){
   assert(p4CanBusB()==(profile==1?P4_BODY:P4_CHASSIS));
   assert(p4CanBusExtra()==(profile==1?P4_CHASSIS:P4_PARTY));
   for(uint8_t bus=0;bus<3;bus++)assert(p4CanInstall(bus,false));
-  const int tx[]={20,22,26},rx[]={21,23,27};
+  const int tx[]={CAN_BODY_TX,CAN_CHASSIS_TX,CAN_PARTY_TX},rx[]={CAN_BODY_RX,CAN_CHASSIS_RX,CAN_PARTY_RX};
   for(int bus=0;bus<3;bus++){assert(configs[bus].tx_io==tx[bus]&&configs[bus].rx_io==rx[bus]);assert(configs[bus].rx_queue_len==256);}
   CanFrame frame{};frame.can_id=0x123;frame.can_dlc=8;frame.data[7]=0x5a;
   p4CanExtraFresh=false;assert(p4CanSendFrame(&frame)!=ESP_OK);

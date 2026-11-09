@@ -43,7 +43,7 @@ with sync_playwright() as pw:
  page.screenshot(path=str(root/'artifacts/dashboard-three-buses-simulated.png'),full_page=True)
  diag=dict(traffic,fwVersion='test-net2',networkState='READY',hostedHostVersion='2.6.1',hostedC6Version='2.6.0')
  for n in range(1,4):
-  diag.update({f'can{n}RxCount':100*n,f'can{n}RxPolls':2000*n,f'can{n}RxResult':'ESP_ERR_TIMEOUT',f'can{n}InitResult':'ESP_OK',f'can{n}Mode':'NORMAL',f'can{n}StatusSeen':True,f'can{n}StatusAgeMs':20,f'can{n}Controller':n-1,f'can{n}TxPin':[20,22,26][n-1],f'can{n}RxPin':[21,23,27][n-1]})
+  diag.update({f'can{n}RxCount':100*n,f'can{n}RxPolls':2000*n,f'can{n}RxResult':'ESP_ERR_TIMEOUT',f'can{n}InitResult':'ESP_OK',f'can{n}Mode':'NORMAL',f'can{n}StatusSeen':True,f'can{n}StatusAgeMs':20,f'can{n}Controller':n-1,f'can{n}TxPin':[4,2,26][n-1],f'can{n}RxPin':[5,3,27][n-1]})
  page.evaluate('async data=>{await fetchSys(data);openPanel("panelDiag");}',diag)
  page.wait_for_timeout(400)
  for width in [360,430,1024]:

@@ -44,7 +44,7 @@ for(let n=1;n<=3;n++)Object.assign(stats,{
  ['can'+n+'State']:n===2?2:1,['can'+n+'Ready']:n!==2,['can'+n+'StatusSeen']:true,['can'+n+'StatusAgeMs']:25,
  ['can'+n+'RxCount']:100*n,['can'+n+'RxPolls']:1000*n,['can'+n+'RxResult']:'ESP_ERR_TIMEOUT',
  ['can'+n+'InitResult']:'ESP_OK',['can'+n+'Mode']:'NORMAL',['can'+n+'Controller']:n-1,
- ['can'+n+'TxPin']:[20,22,26][n-1],['can'+n+'RxPin']:[21,23,27][n-1],['can'+n+'Tec']:n,['can'+n+'Rec']:n+10
+ ['can'+n+'TxPin']:[4,2,26][n-1],['can'+n+'RxPin']:[5,3,27][n-1],['can'+n+'Tec']:n,['can'+n+'Rec']:n+10
 });
 context.fetchSys(stats).then(()=>{
  for(let n=1;n<=3;n++){
