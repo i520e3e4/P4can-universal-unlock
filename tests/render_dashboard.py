@@ -12,6 +12,9 @@ diag={}
 with sync_playwright() as pw:
  browser=pw.chromium.launch(executable_path=r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',headless=True)
  page=browser.new_page(viewport={'width':430,'height':1000},device_scale_factor=1)
+ # The dashboard defaults to Chinese; this test asserts English labels, so pin
+ # the stored language before any page script runs.
+ page.add_init_script("try{localStorage.setItem('p4can_lang','en')}catch(e){}")
  errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
  def route(req):
   url=req.request.url

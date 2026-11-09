@@ -1,8 +1,21 @@
 """Build the Chinese UI layer for dashboard_source.html.
 
-Reads tools/i18n_source.json (phrases, terms, upper-case labels, static fixes),
-derives a full dictionary from the dashboard's own visible strings, and injects
-a self-contained runtime language switcher before </body>. Idempotent.
+Reads tools/i18n_source.json and injects a self-contained runtime language
+switcher before </body>. Idempotent.
+
+Translation model
+-----------------
+1. ``strings`` — one authoritative Chinese entry per visible dashboard string.
+   Exact match only. This is the primary path and covers the whole interface.
+2. ``tokens`` — a short list of unambiguous UPPER-CASE state words that may be
+   substituted inside strings the firmware composes at runtime (for example
+   ``"CAN 2 · CHASSIS · BUS OFF"``). Substitution is case-sensitive and
+   word-bounded, so ``Off-Highway`` never turns into ``关闭-Highway``.
+
+There is deliberately no word-by-word translation: the previous version could
+emit mixed text such as "AP 激活 only" or "已封禁 Car". Anything not covered by
+an exact entry or a state token stays in English instead of being half
+translated.
 
 Run before tools/build_dashboard.py:
     python tools/build_i18n.py
@@ -10,6 +23,7 @@ Run before tools/build_dashboard.py:
 """
 from __future__ import annotations
 
+import html as html_mod
 import json
 import re
 from pathlib import Path
@@ -24,26 +38,30 @@ END = "<!-- P4CAN I18N END -->"
 # The upstream host test rejects these tokens anywhere in the HTML file.
 FORBIDDEN = re.compile(r"\bMCP2515\b|\bSPI\b|t-?2-?can|twai_(?:transmit|receive|driver_install|driver_uninstall|start|stop)\(", re.I)
 
+# Strings that are intentionally identical in both languages (product names,
+# bus labels, units). They are declared in i18n_source.json -> identical.
+
 
 def candidate_strings(html: str) -> set[str]:
+    """Visible strings + attribute strings + literal UI strings in scripts."""
     out: set[str] = set()
     # Only real markup: script/style bodies contain comparison operators that
     # otherwise leak JS fragments into the dictionary.
     markup = re.sub(r"<script\b.*?</script>", "", html, flags=re.S | re.I)
     markup = re.sub(r"<style\b.*?</style>", "", markup, flags=re.S | re.I)
     for raw in re.findall(r">([^<>]+)<", markup):
-        t = re.sub(r"\s+", " ", raw).strip()
+        t = re.sub(r"\s+", " ", html_mod.unescape(raw)).strip()
         if t and re.search(r"[A-Za-z]{2}", t) and len(t) < 200:
             out.add(t)
     for attr in ("placeholder", "title", "aria-label"):
         for v in re.findall(attr + r'="([^"]+)"', markup):
-            v = v.strip()
+            v = html_mod.unescape(v).strip()
             if v and re.search(r"[A-Za-z]{2}", v):
                 out.add(v)
     # Literal UI strings inside scripts: no code punctuation allowed.
     for script in re.findall(r"<script\b.*?</script>", html, flags=re.S | re.I):
-        for v in re.findall(r"['\"]([A-Za-z][A-Za-z0-9 /+&.,%\-\u00b7\u2026]{3,90})['\"]", script):
-            v = v.strip()
+        for v in re.findall(r"['\"]([A-Za-z][A-Za-z0-9 /+&.,%\-\u00b7\u2026<>]{3,90})['\"]", script):
+            v = html_mod.unescape(v).strip()
             if (len(v) > 3 and " " in v and not v.startswith("http")
                     and re.search(r"[A-Za-z]{3}", v)
                     and not re.search(r"\b(function|return|const|let|var|null|true|false|undefined)\b", v)):
@@ -60,59 +78,42 @@ def tidy(s: str) -> str:
     return s
 
 
-ALLOW = re.compile(
-    r"^(?:can|ap|ble|s3xy|p4|r79|alc|ulc|das|epas|noa|fsd|stock|mux|twai|tx|rx|"
-    r"nvs|ota|csv|lab|id|hwm|ho|nm|wi|fi|usb|gpio|tsl|model|yl|bus|off|ok|fail|"
-    r"ready|park|active|kbit|ms|km|bin|nag|tlssc|rssi|mac|ip|ssid|uuid|ecc|"
-    r"dhkey|smp|att|gatt|nimble|hosted|esp|arduino|idf|highland|beta|smart|summon|only)$",
-    re.I,
-)
+def validate(cfg: dict) -> None:
+    """Fail the build on empty, duplicated or obviously untranslated entries."""
+    strings = cfg["strings"]
+    keep = set(cfg.get("identical", []))
+    problems = []
+    for en, zh in strings.items():
+        if not en.strip():
+            problems.append("empty source key")
+        if not str(zh).strip():
+            problems.append(f"empty translation: {en!r}")
+        if en == zh and en not in keep:
+            problems.append(f"untranslated entry: {en!r}")
+        if FORBIDDEN.search(en) or FORBIDDEN.search(str(zh)):
+            problems.append(f"forbidden token: {en!r}")
+    if problems:
+        raise SystemExit("i18n source is invalid:\n  " + "\n  ".join(problems))
 
 
-def leftovers(s: str) -> int:
-    return sum(1 for w in re.findall(r"[A-Za-z]{2,}", s) if not ALLOW.match(w))
-
-
-def build_dictionary(candidates: set[str], phrases: dict, terms: dict, upper: dict) -> dict:
-    patterns = [
-        (k, re.compile(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", re.I))
-        for k in sorted(terms, key=len, reverse=True)
-    ]
-
-    def translate(text: str) -> str | None:
-        if text in phrases:
-            return tidy(phrases[text])
-        if text in upper:
-            return tidy(upper[text])
-        # Long free-form sentences are translated only by an exact phrase entry;
-        # word-by-word substitution there would produce broken mixed text.
-        if len(text.split()) >= 8:
-            return None
-        out, hit = text, False
-        for key, pattern in patterns:
-            out, n = pattern.subn(terms[key], out)
-            hit = hit or bool(n)
-        out = tidy(out)
-        if not hit or out == text or leftovers(out) >= 2:
-            return None
-        return out
-
-    result: dict[str, str] = {}
-    for text in sorted(candidates):
-        if FORBIDDEN.search(text):
+def coverage(cands: set[str], cfg: dict) -> tuple[list[str], list[str]]:
+    """Split untranslated candidates into state-token resolvable and real gaps."""
+    keep = set(cfg.get("identical", []))
+    token_re = re.compile(
+        r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, cfg["tokens"])) + r")(?![A-Za-z0-9])"
+        if cfg["tokens"] else r"(?!x)x"
+    )
+    resolved, gaps = [], []
+    for text in sorted(cands):
+        if text in cfg["strings"]:
             continue
-        zh = translate(text)
-        if zh and zh != text and not FORBIDDEN.search(zh):
-            result[text] = zh
-    # Exact phrase entries are always kept, even when no DOM node matches them
-    # at build time (JS builds some of them at runtime).
-    for en, zh in phrases.items():
-        if not FORBIDDEN.search(en) and not FORBIDDEN.search(zh):
-            result[en] = zh
-    for en, zh in upper.items():
-        if not FORBIDDEN.search(en) and not FORBIDDEN.search(zh) and en not in result:
-            result[en] = zh
-    return dict(sorted(result.items()))
+        if text in keep:
+            resolved.append(text)
+        elif token_re.search(text) and len(text) <= 120:
+            resolved.append(text)
+        else:
+            gaps.append(text)
+    return resolved, gaps
 
 
 def js_literal(obj) -> str:
@@ -121,47 +122,38 @@ def js_literal(obj) -> str:
 
 RUNTIME = r"""
 (function(){
-var D=%DICT%,T=%TERMS%,U=%UPPER%;
+var D=%DICT%,T=%TOKENS%;
 var KEY='p4can_lang',lang='zh';
 try{lang=localStorage.getItem(KEY)||'zh';}catch(e){}
 var ATTR=['placeholder','title','aria-label'];
 var textMemo=new WeakMap(),attrMemo=new WeakMap();
-var TK=Object.keys(T).sort(function(a,b){return b.length-a.length;});
 function esc(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 function tidy(s){return s.replace(/([\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])/g,'$1');}
+var TK=Object.keys(T).sort(function(a,b){return b.length-a.length;});
 var pats=TK.map(function(k){
-  return {k:k,re:new RegExp('(^|[^A-Za-z0-9])'+esc(k)+'(?![A-Za-z0-9])','gi')};
+  return {k:k,re:new RegExp('(^|[^A-Za-z0-9])'+esc(k)+'(?![A-Za-z0-9])','g')};
 });
-var ALLOW=/^(?:can|ap|ble|s3xy|p4|r79|alc|ulc|das|epas|noa|fsd|stock|mux|twai|tx|rx|nvs|ota|csv|lab|id|hwm|ho|nm|wi|fi|usb|gpio|tsl|model|yl|bus|off|ok|fail|ready|park|active|kbit|ms|km|bin|nag|tlssc|rssi|mac|ip|ssid|uuid|ecc|dhkey|smp|att|gatt|nimble|hosted|esp|arduino|idf|highland|beta|smart|summon|only)$/i;
-function leftovers(s){
-  var w=s.match(/[A-Za-z]{2,}/g)||[],n=0;
-  for(var i=0;i<w.length;i++)if(!ALLOW.test(w[i]))n++;
-  return n;
-}
-function fallback(t){
-  if(Object.prototype.hasOwnProperty.call(U,t))return U[t];
-  var out=t,changed=false,lower=out.toLowerCase();
+/* State tokens only: case-sensitive, word-bounded, never reorders the text. */
+function tokens(s){
+  var out=s,hit=false;
   for(var i=0;i<pats.length;i++){
     var p=pats[i];
-    if(lower.indexOf(p.k.toLowerCase())<0)continue;
     p.re.lastIndex=0;
-    if(p.re.test(out)){
-      p.re.lastIndex=0;
-      out=out.replace(p.re,function(m,a){return a+T[p.k];});
-      changed=true;
-    }
+    if(!p.re.test(out))continue;
     p.re.lastIndex=0;
+    out=out.replace(p.re,function(m,a){return a+T[p.k];});
+    hit=true;
   }
-  return changed&&out!==t?tidy(out):null;
+  return hit?tidy(out):null;
 }
 function tr(s){
   if(!s||typeof s!=='string')return s;
   var t=s.replace(/\s+/g,' ').trim();
   if(!t||!/[A-Za-z]/.test(t))return s;
-  var exact=Object.prototype.hasOwnProperty.call(D,t);
-  var v=exact?D[t]:fallback(t);
+  var v;
+  if(Object.prototype.hasOwnProperty.call(D,t))v=D[t];
+  else if(t.length<=120)v=tokens(t);
   if(!v||v===t)return s;
-  if(!exact&&leftovers(v)>=2)return s;
   var lead=(s.match(/^\s*/)||[''])[0],tail=(s.match(/\s*$/)||[''])[0];
   return lead+v+tail;
 }
@@ -261,6 +253,8 @@ mo.observe(document.documentElement,OPTS);
 
 def main() -> None:
     cfg = json.loads(SOURCE.read_text(encoding="utf8"))
+    validate(cfg)
+
     html = HTML.read_text(encoding="utf8")
     if START in html and END in html:
         a, b = html.index(START), html.index(END) + len(END)
@@ -269,14 +263,12 @@ def main() -> None:
     for old, new in cfg["static_fixes"].items():
         html = html.replace(old, new)
 
-    candidates = candidate_strings(html)
-    dictionary = build_dictionary(
-        candidates, cfg["phrases"], cfg["terms"], cfg["upper"]
-    )
+    dictionary = {en: tidy(zh) for en, zh in cfg["strings"].items()}
+    resolved, gaps = coverage(candidate_strings(html), cfg)
+
     script = (
         RUNTIME.replace("%DICT%", js_literal(dictionary))
-        .replace("%TERMS%", js_literal(cfg["terms"]))
-        .replace("%UPPER%", js_literal(cfg["upper"]))
+        .replace("%TOKENS%", js_literal(cfg["tokens"]))
         .strip()
     )
     if FORBIDDEN.search(script):
@@ -284,8 +276,13 @@ def main() -> None:
     block = START + "\n<script>" + script + "</script>\n" + END + "\n"
     html = html.replace("</body>", block + "</body>")
     HTML.write_text(html, encoding="utf8")
-    print(f"i18n: {len(dictionary)} entries, {len(candidates)} source strings, "
-          f"html={len(html.encode('utf8'))} bytes")
+
+    print(f"i18n: {len(dictionary)} exact entries, {len(cfg['tokens'])} state tokens, "
+          f"{len(resolved)} covered strings, {len(gaps)} gaps, html={len(html.encode('utf8'))} bytes")
+    if gaps:
+        print("i18n gaps (kept in English on purpose):")
+        for g in gaps:
+            print("  -", g)
 
 
 if __name__ == "__main__":
