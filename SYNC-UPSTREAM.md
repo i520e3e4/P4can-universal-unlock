@@ -9,7 +9,26 @@
    `tools/i18n_source.json`、`tools/build_i18n.py`，以及由其生成的 `index_html.h`、
    相应的 `tests/` 断言）。
 
-## 常规同步（上游无冲突改动时）
+## 一键同步（推荐）
+
+```bash
+python tools/sync_upstream.py             # fetch -> rebase -> 自动解冲突 -> 强推 origin/main
+python tools/sync_upstream.py --no-push  # 只做到本地，不推送（先审结果）
+```
+
+脚本自动处理的冲突：
+
+| 文件 | 自动处理方式 |
+|---|---|
+| `pin_config.h` | 以上游版本为基底，覆盖 6 个 `CAN_*` 宏为 X179 值；上游新增/修改的其他宏全部保留 |
+| `dashboard_source.html` | 以上游版本为基底，把 `<!-- P4CAN I18N START/END -->` 整块重新贴到 `</body>` 前（去重，上游已合并该特性时会自动跳过重复注入） |
+| `index_html.h` | 冲突标记一律丢弃，重跑 `tools/build_dashboard.py` 重新生成 |
+| 其他任何文件 | **故意不猜**，中止并报告，留待人工处理 |
+
+注意 rebase 中 stage 语义反转：`:2:`（ours）是上游基底，`:3:`（theirs）才是自己的提交，脚本已按此实现。
+回归测试：`_synctest.py`（工作区根，隔离沙箱模拟"上游改同一行引脚 + 改仪表盘"的硬冲突）。
+
+## 手动同步（上游无冲突改动时）
 
 ```bash
 git fetch upstream
