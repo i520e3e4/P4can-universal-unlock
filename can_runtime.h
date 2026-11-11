@@ -485,6 +485,7 @@ static void canTaskNativeA(void* arg) {
       canTxMarkFresh(CAN_TX_FRESH_PARTY); // physical CAN A fresh in this recovery epoch
       bootCaptureObservePartyFrame(partyId, rxf.can_dlc, rxf.data);
       researchCaptureObserveParty(partyId, rxf.can_dlc, rxf.data);
+      burstFlashObserveRx(partyId, rxf.data, rxf.can_dlc, 0u, frameNow);
       driverMonitorCaptureObserve(DRIVER_MONITOR_BUS_A, partyId, rxf.can_dlc, rxf.data);
       if (partyId == UI_CHASSIS_CONTROL_ID && rxf.can_dlc >= 8)
         uiAutoLaneChangeObserveAndInjectCanA(rxf);
@@ -630,6 +631,7 @@ static void canTaskTwai(void* arg) {
         canTxMarkFresh(CAN_TX_FRESH_VH);
         bootCaptureObserveVhFrame(f.identifier, f.data_length_code);
         researchCaptureObserveVh((uint16_t)f.identifier, f.data_length_code, f.data);
+        burstFlashObserveRx((uint16_t)f.identifier, f.data, f.data_length_code, 1u, frameNow);
         driverMonitorCaptureObserve(DRIVER_MONITOR_BUS_B, (uint16_t)f.identifier, f.data_length_code, f.data);
         switch (f.identifier) {
         case UI_CHASSIS_CONTROL_ID:
@@ -736,6 +738,7 @@ static void canTaskTwai(void* arg) {
     const uint32_t captureNow = (uint32_t)millis();
     researchCaptureTick(captureNow);
     driverMonitorCaptureTick(captureNow);
+    burstFlashTick(captureNow);
     const uint32_t queueNow = (uint32_t)millis();
     if ((uint32_t)(queueNow - lastQueueStatusMs) >= TWAI_QUEUE_TELEMETRY_PERIOD_MS) {
       lastQueueStatusMs = queueNow;

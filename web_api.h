@@ -5639,6 +5639,7 @@ static void webTask(void *arg) {
   server.on("/api/system/factory-reset", HTTP_POST, httpFactoryReset);
   server.on("/api/system/reset-nvs-keep-ble", HTTP_POST, httpResetNvsPreserveS3xyBle);
   server.on("/api/system/reboot", HTTP_POST, httpRebootP4Can);
+  burstFlashRegisterRoutes();
   server.on("/api/wifi/status", HTTP_GET, httpWifiStatus);
   server.on("/api/wifi/apply", HTTP_POST, httpWifiApply);
   server.on("/api/ota/status", HTTP_GET, httpOtaStatus);

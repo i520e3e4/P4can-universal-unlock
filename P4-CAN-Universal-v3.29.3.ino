@@ -25,6 +25,16 @@
 #include "driver/twai.h"
 #include "pin_config.h"
 
+// Optional burst-flash hooks. Definitions live in burst_flash.h, which is
+// included later in this translation unit; s3xy_ble.h is included earlier and
+// needs these declarations to dispatch the two button actions.
+bool burstFlashTriggerFromButton(uint8_t channel);
+void burstFlashObserveRx(uint16_t canId, const uint8_t *data, uint8_t dlc,
+                         uint8_t bus, uint32_t nowMs);
+void burstFlashTick(uint32_t nowMs);
+// burstFlashInit() is static in burst_flash.h and called from setup(), which
+// is defined after all includes, so it needs no forward declaration here.
+
 #ifndef P4CAN_SERIAL_DIAGNOSTICS
 #define P4CAN_SERIAL_DIAGNOSTICS 0
 #endif
@@ -44,6 +54,7 @@
 #include "p4_network.h"
 #include "summon_state_pure.h"
 #include "auto_blinker_pure.h"
+#include "burst_flash_pure.h"
 #include "runtime_gate_pure.h"
 #include "can_task_diagnostics_pure.h"
 #include "can_research_capture_pure.h"
@@ -79,6 +90,7 @@
 #include "can_core.h"
 #include "can_busoff_persistence.h"
 #include "vehicle_logic.h"
+#include "burst_flash.h"
 #include "continuous_ap_runtime.h"
 #include "web_api.h"
 #include "can_runtime.h"
@@ -300,6 +312,7 @@ void setup() {
   }
 
   P4CAN_SERIAL_PRINTLN("BOOT OK");
+  burstFlashInit();
   canUsbStartTask();
   __atomic_fetch_add(&canUsbControllerEpoch, 1U, __ATOMIC_RELAXED);
 }
